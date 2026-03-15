@@ -1,9 +1,8 @@
 #!/bin/bash
 # load-test.sh — hammers POST /notes to generate CPU load for the HPA demo.
 #
-# Usage:
-#   minikube:       ./load-test.sh $(minikube service api --url)
-#   Docker Desktop: ./load-test.sh $API_URL
+# Usage (port-forward must be running: kubectl port-forward svc/api 3000:3000):
+#   ./load-test.sh http://localhost:3000
 #
 # In a second terminal, watch pods scale up:
 #   kubectl get pods -w
