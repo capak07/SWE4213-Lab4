@@ -12,7 +12,7 @@
 
 ## Overview
 
-In this lab you will deploy a multi-service notes application to a local Kubernetes cluster. The system has four services: a React-style frontend, an API, a stats microservice, and a Postgres database. You will build the system up one resource type at a time — each part introduces a single Kubernetes concept and adds one piece to a running whole.
+In this lab you will deploy a multi-service notes application to a local Kubernetes cluster. The system has three services running inside the cluster (an API, a stats microservice, and a Postgres database) plus a React frontend that runs locally on your machine. You will build the system up one resource type at a time — each part introduces a single Kubernetes concept and adds one piece to a running whole.
 
 The application code and Dockerfiles are provided. Your job is to complete the Kubernetes manifest skeletons in the `k8s/` directory.
 
@@ -58,12 +58,12 @@ You should see one node with status `Ready`.
 
 Four services working together:
 
-| Service         | Language    | Role                                                          |
-|-----------------|-------------|---------------------------------------------------------------|
-| `frontend`      | React + Vite | Serves the UI — calls the api from the browser               |
-| `api`           | Express.js  | Notes CRUD; proxies `/stats` requests to stats-service        |
-| `stats-service` | Express.js  | Queries Postgres for aggregate statistics                     |
-| `postgres`      | Postgres 16 | Stores notes                                                  |
+| Service         | Where        | Language    | Role                                                          |
+|-----------------|--------------|-------------|---------------------------------------------------------------|
+| `frontend`      | Your machine | React + Vite | Serves the UI — calls the api from the browser               |
+| `api`           | Cluster      | Express.js  | Notes CRUD; proxies `/stats` requests to stats-service        |
+| `stats-service` | Cluster      | Express.js  | Queries Postgres for aggregate statistics                     |
+| `postgres`      | Cluster      | Postgres 16 | Stores notes                                                  |
 
 **api endpoints:**
 
@@ -88,59 +88,47 @@ Four services working together:
 ## Architecture
 
 ```
-  Browser
-     │
-     │  HTTP (LoadBalancer — via minikube tunnel)
-     ▼
-┌────────────────────┐
-│  frontend Service  │
-│ (type: LoadBalancer)│
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐
-│   frontend Pod     │  (React + Vite — serves the UI)
-└────────────────────┘
-          │
-          │  JS fetch calls to http://localhost:3000 (LoadBalancer)
-          │  (browser → api LoadBalancer directly)
-          ▼
-┌────────────────────┐
-│    api Service     │
-│ (type: LoadBalancer)│
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐        ┌──────────────────────────┐
-│     api Pod(s)     │───────►│  stats-service Service   │
-│   (notes API)      │        │  (type: ClusterIP)       │
-└────────────────────┘        └───────────┬──────────────┘
-          │                               │
-          │                               ▼
-          │                   ┌──────────────────────────┐
-          │                   │   stats-service Pod      │
-          │                   └──────────────────────────┘
-          │
-          │        ┌──────────────────────┐
-          └───────►│  postgres Service    │
-                   │  (type: ClusterIP)   │
-                   └──────────┬───────────┘
-                              │
-                              ▼
-                   ┌──────────────────────┐
-                   │    postgres Pod      │
-                   │    + PVC (Part 6)    │
-                   └──────────────────────┘
+  Your Machine
+  ┌──────────────────────────────────────────────┐
+  │  Browser + frontend (npm run dev :5173)       │
+  │         │                                     │
+  │         │ JS fetch → http://localhost:3000    │
+  └─────────┼───────────────────────────────────-─┘
+            │
+            ▼
+  ┌─────────────────────────────── Kubernetes Cluster ──────────────────────────────┐
+  │                                                                                  │
+  │  ┌────────────────────┐        ┌──────────────────────────┐                     │
+  │  │    api Service     │        │  stats-service Service   │                     │
+  │  │ (type: LoadBalancer│        │  (type: ClusterIP)       │                     │
+  │  │  localhost:3000)   │        │  (internal only)         │                     │
+  │  └─────────┬──────────┘        └───────────┬──────────────┘                     │
+  │            │                               │                                     │
+  │            ▼                               ▼                                     │
+  │  ┌────────────────────┐        ┌──────────────────────────┐                     │
+  │  │     api Pod(s)     │───────►│   stats-service Pod      │                     │
+  │  └─────────┬──────────┘        └──────────────────────────┘                     │
+  │            │                                                                     │
+  │            │        ┌──────────────────────┐                                    │
+  │            └───────►│  postgres Service    │                                    │
+  │                     │  (type: ClusterIP)   │                                    │
+  │                     └──────────┬───────────┘                                    │
+  │                                │                                                 │
+  │                                ▼                                                 │
+  │                     ┌──────────────────────┐                                    │
+  │                     │    postgres Pod      │                                    │
+  │                     │    + PVC (Part 6)    │                                    │
+  │                     └──────────────────────┘                                    │
+  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Service Type Summary
 
-| Service         | Type        | Reachable from             | Why                                               |
-|-----------------|-------------|----------------------------|---------------------------------------------------|
-| `frontend`      | LoadBalancer | Browser (`http://localhost:4173`)      | Users need to open it in a browser                |
-| `api`           | LoadBalancer | Browser (`http://localhost:3000`)       | Frontend JS calls it directly from the browser    |
-| `stats-service` | ClusterIP   | Inside cluster only        | Only `api` calls it — no reason to expose it publicly |
-| `postgres`      | ClusterIP   | Inside cluster only        | Only `api` and `stats-service` need it            |
+| Service         | Type         | Reachable from              | Why                                                   |
+|-----------------|--------------|-----------------------------|-------------------------------------------------------|
+| `api`           | LoadBalancer | Browser (`http://localhost:3000`) | Frontend JS calls it directly from the browser   |
+| `stats-service` | ClusterIP    | Inside cluster only         | Only `api` calls it — no reason to expose it publicly |
+| `postgres`      | ClusterIP    | Inside cluster only         | Only `api` and `stats-service` need it                |
 
 ---
 
@@ -188,9 +176,7 @@ SWE4213-Lab4/
     │   └── postgres-deployment.yaml    # provided
     ├── 07-deployment/
     │   ├── api-deployment.yaml         # SKELETON
-    │   ├── stats-deployment.yaml       # SKELETON
-    │   ├── frontend-deployment.yaml    # SKELETON
-    │   └── frontend-service.yaml       # SKELETON
+    │   └── stats-deployment.yaml       # SKELETON
     └── 08-scaling/
         └── api-hpa.yaml                # SKELETON
 ```
@@ -223,7 +209,17 @@ Notice that `stats-service` in `docker-compose.yml` has no `ports:` mapping. The
 
 A Kubernetes **cluster** consists of a **control plane** (schedules workloads, maintains desired state) and one or more **worker nodes** (run the containers). In Docker Desktop and minikube, a single machine plays both roles.
 
-Build all three Docker images before doing anything else.
+**Start the frontend locally** — it runs on your machine and calls the api at `http://localhost:3000`:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Leave this running. The UI will be available at `http://localhost:5173`.
+
+**Build the cluster images** before doing anything else.
 
 > **minikube users — read this first.** minikube runs its own Docker daemon, separate from your Mac's Docker. Images built with a plain `docker build` go into the host daemon and are invisible to minikube. You must point your shell at minikube's daemon before building:
 > ```bash
@@ -237,7 +233,6 @@ Build all three Docker images before doing anything else.
 # minikube users: run eval $(minikube docker-env) first
 docker build -t api:latest ./api
 docker build -t stats-service:latest ./stats-service
-docker build -t frontend:latest ./frontend
 ```
 
 > **Important:** The manifests use `imagePullPolicy: Never`. This tells Kubernetes to use local images instead of pulling from Docker Hub. If you see `ErrImageNeverPull`, you either forgot `eval $(minikube docker-env)` before building, or you need to rebuild after opening a new terminal.
@@ -546,15 +541,13 @@ You have been running application services as bare Pods. A **Deployment** wraps 
 - Performs rolling updates without downtime
 - Waits for readiness probes before sending traffic to new pods
 
-You have three Deployments to write this part: `api`, `stats-service`, and `frontend`.
+You have two Deployments to write this part: `api` and `stats-service`. The frontend runs locally on your machine — no Deployment needed for it.
+
+> **Why not deploy the frontend in the cluster?** Frontends are commonly served from a CDN (e.g. Vercel, Netlify, CloudFront) — the built static files are distributed globally without touching your Kubernetes cluster. Running it locally with `npm run dev` mirrors this separation: the cluster handles API traffic only.
 
 **api-deployment.yaml** — open `k8s/07-deployment/api-deployment.yaml` and fill in every `???`. Pay attention to `livenessProbe`, `readinessProbe`, and the `strategy` fields — the comments explain each one.
 
 **stats-deployment.yaml** — open `k8s/07-deployment/stats-deployment.yaml` and fill in every `???`. The pattern is identical to `api-deployment.yaml`.
-
-**frontend-deployment.yaml and frontend-service.yaml** — open both files and fill in every `???`. The frontend has no secrets or configmap — only the structural fields need completing.
-
-> **Note:** Deploying the frontend inside the cluster is one valid approach, but it is not the only one. In production, frontends are commonly served from a CDN (e.g. Vercel, Netlify, CloudFront) — the built static files are distributed globally without ever touching your Kubernetes cluster. The cluster then only handles API traffic. Including the frontend here gives you practice with Deployments and LoadBalancer services, but keep in mind it is an architectural choice, not a requirement.
 
 Remove the bare pods and apply the Deployments:
 
@@ -563,15 +556,13 @@ kubectl delete pod api stats-service --ignore-not-found
 
 kubectl apply -f k8s/07-deployment/api-deployment.yaml
 kubectl apply -f k8s/07-deployment/stats-deployment.yaml
-kubectl apply -f k8s/07-deployment/frontend-deployment.yaml
-kubectl apply -f k8s/07-deployment/frontend-service.yaml
 
 kubectl get deployments
 kubectl get pods
 kubectl rollout status deployment/api
 ```
 
-Open `http://localhost:4173` in a browser. You should see the notes UI. Create a note and click **Refresh Stats**.
+Open `http://localhost:5173` in a browser (your local frontend). Create a note and click **Refresh Stats**.
 
 **Self-healing demo:**
 
@@ -696,8 +687,6 @@ Submit your repository (zip or GitHub link) containing:
 - [ ] `k8s/05-secret/stats-pod.yaml` — completed
 - [ ] `k8s/07-deployment/api-deployment.yaml` — completed
 - [ ] `k8s/07-deployment/stats-deployment.yaml` — completed
-- [ ] `k8s/07-deployment/frontend-deployment.yaml` — completed
-- [ ] `k8s/07-deployment/frontend-service.yaml` — completed
 - [ ] `k8s/08-scaling/api-hpa.yaml` — completed
 - [ ] Screenshot: `kubectl get pods` with all pods `Running`
 - [ ] Screenshot: `kubectl get hpa` during the load test showing pods scaling up
@@ -713,7 +702,7 @@ Submit your repository (zip or GitHub link) containing:
 | `configmap.yaml` — `STATS_SERVICE_URL` set correctly; consumed via `envFrom` in api pod       | 1     |
 | `api-secret.yaml` — API key stored as Secret; both pods use `secretKeyRef` for `DATABASE_URL` | 1     |
 | Postgres PVC — data survives a pod deletion                                                    | 1     |
-| All three Deployments apply cleanly; liveness and readiness probes defined on api and stats    | 1     |
+| Both Deployments apply cleanly; liveness and readiness probes defined on api and stats         | 1     |
 | Self-healing — deleted pod is automatically replaced (screenshot)                              | 1     |
 | `api-hpa.yaml` — pods scale up under load (screenshot of `kubectl get hpa`)                   | 1     |
 | **Total**                                                                                      | **/8** |
