@@ -1,0 +1,21 @@
+# Part 9 — api Service (demoted to ClusterIP)
+#
+# Now that the gateway is the external entry point, the api no longer needs
+# to be reachable from outside the cluster. Changing it to ClusterIP means
+# only pods inside the cluster (i.e. the gateway) can reach it.
+#
+# This replaces the LoadBalancer Service from Part 3.
+# Apply:
+#   kubectl apply -f k8s/09-gateway/api-service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: ???   # Must match the label on your api Deployment pods.
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000

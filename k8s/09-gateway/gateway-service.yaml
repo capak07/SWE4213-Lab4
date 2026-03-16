@@ -1,0 +1,19 @@
+# Part 9 — Gateway Service
+#
+# LoadBalancer on port 3000 — the frontend continues to call http://localhost:3000
+# unchanged. The gateway listens internally on 8080; this Service maps 3000 → 8080.
+#
+# Apply:
+#   kubectl apply -f k8s/09-gateway/gateway-service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector:
+    app: gateway
+  type: LoadBalancer
+  ports:
+    - port: 3000
+      targetPort: 8080

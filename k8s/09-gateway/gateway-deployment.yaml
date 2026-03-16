@@ -1,0 +1,33 @@
+# Part 9 — Gateway Deployment
+#
+# The gateway is the single external entry point for all API traffic.
+# It rate-limits incoming requests then proxies them to the api Service,
+# which is now ClusterIP — no longer reachable directly from outside the cluster.
+#
+# Fill in every ??? below, then apply:
+#   kubectl apply -f k8s/09-gateway/gateway-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_URL
+              value: "???"   # Internal DNS name for the api Service.
+                             # Format: http://<service-name>:<port>

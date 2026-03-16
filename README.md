@@ -143,6 +143,10 @@ SWE4213-Lab4/
 │   ├── Dockerfile                      # provided
 │   ├── package.json                    # provided
 │   └── src/index.js                    # provided
+├── gateway/
+│   ├── Dockerfile                      # provided
+│   ├── package.json                    # provided
+│   └── src/index.js                    # provided
 ├── stats-service/
 │   ├── Dockerfile                      # provided
 │   ├── package.json                    # provided
@@ -177,8 +181,12 @@ SWE4213-Lab4/
     ├── 07-deployment/
     │   ├── api-deployment.yaml         # SKELETON
     │   └── stats-deployment.yaml       # SKELETON
-    └── 08-scaling/
-        └── api-hpa.yaml                # SKELETON
+    ├── 08-scaling/
+    │   └── api-hpa.yaml                # SKELETON
+    └── 09-gateway/
+        ├── gateway-deployment.yaml     # SKELETON
+        ├── gateway-service.yaml        # provided
+        └── api-service.yaml            # SKELETON (demotes api to ClusterIP)
 ```
 
 ---
@@ -672,6 +680,105 @@ After the load test finishes, watch `kubectl get hpa -w`. Once CPU drops below t
 
 ---
 
+## Part 9 — API Gateway
+
+So far the api Service has been a `LoadBalancer` — directly reachable from outside the cluster. In production this is rarely ideal. You want a single controlled entry point that can enforce rate limiting, authentication, and routing before traffic ever reaches your application services.
+
+In this part you will deploy a lightweight **gateway** service that:
+- Accepts all inbound traffic at `localhost:3000`
+- Rate-limits requests per IP (100 requests per minute)
+- Proxies valid requests through to the api
+- Demotes the api Service to `ClusterIP` — it is no longer reachable from outside the cluster at all
+
+**Build the gateway image:**
+
+```bash
+# minikube users: eval $(minikube docker-env) first
+docker build -t gateway:latest ./gateway
+```
+
+**Demote the api Service to ClusterIP:**
+
+```bash
+kubectl apply -f k8s/09-gateway/api-service.yaml
+```
+
+After applying, `kubectl get svc api` should show `TYPE: ClusterIP`. Try curling it directly — it will no longer respond:
+
+```bash
+curl http://localhost:3000/health   # should fail — api is now internal only
+```
+
+**Deploy the gateway:**
+
+Open `k8s/09-gateway/gateway-deployment.yaml` and fill in the `API_URL` — this is the internal DNS name for the api Service (same format as `STATS_SERVICE_URL` from Part 4).
+
+```bash
+kubectl apply -f k8s/09-gateway/gateway-deployment.yaml
+kubectl apply -f k8s/09-gateway/gateway-service.yaml
+kubectl rollout status deployment/gateway
+```
+
+The gateway is now the `LoadBalancer` at `localhost:3000`. The frontend requires no changes.
+
+**Verify:**
+
+```bash
+curl http://localhost:3000/health       # proxied through gateway → api
+curl http://localhost:3000/notes
+```
+
+**Test rate limiting:**
+
+```bash
+for i in $(seq 1 110); do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/health; done
+```
+
+After 100 requests within a minute you should start seeing `429` responses.
+
+**Updated architecture:**
+
+```
+  Your Machine
+  ┌──────────────────────────────────────────────┐
+  │  Browser + frontend (npm run dev :5173)       │
+  │         │                                     │
+  │         │ JS fetch → http://localhost:3000    │
+  └─────────┼─────────────────────────────────────┘
+            │
+            ▼
+  ┌─────────────────────────────── Kubernetes Cluster ──────────────────────────────┐
+  │                                                                                  │
+  │  ┌─────────────────────┐                                                        │
+  │  │   gateway Service   │                                                        │
+  │  │ (type: LoadBalancer │                                                        │
+  │  │   localhost:3000)   │                                                        │
+  │  └──────────┬──────────┘                                                        │
+  │             │  rate limit + proxy                                                │
+  │             ▼                                                                    │
+  │  ┌─────────────────────┐        ┌──────────────────────────┐                   │
+  │  │    api Service      │        │  stats-service Service   │                   │
+  │  │  (type: ClusterIP)  │        │  (type: ClusterIP)       │                   │
+  │  └──────────┬──────────┘        └───────────┬──────────────┘                   │
+  │             │                               │                                    │
+  │             ▼                               ▼                                    │
+  │  ┌─────────────────────┐        ┌──────────────────────────┐                   │
+  │  │     api Pod(s)      │───────►│   stats-service Pod      │                   │
+  │  └──────────┬──────────┘        └──────────────────────────┘                   │
+  │             │                                                                    │
+  │             └───────►┌──────────────────────┐                                  │
+  │                      │  postgres Service    │                                  │
+  │                      │  (type: ClusterIP)   │                                  │
+  │                      └──────────┬───────────┘                                  │
+  │                                 ▼                                                │
+  │                      ┌──────────────────────┐                                  │
+  │                      │    postgres Pod      │                                  │
+  │                      └──────────────────────┘                                  │
+  └──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Deliverables
 
 Submit your repository (zip or GitHub link) containing:
@@ -687,6 +794,8 @@ Submit your repository (zip or GitHub link) containing:
 - [ ] `k8s/05-secret/stats-pod.yaml` — completed
 - [ ] `k8s/07-deployment/api-deployment.yaml` — completed
 - [ ] `k8s/07-deployment/stats-deployment.yaml` — completed
+- [ ] `k8s/09-gateway/gateway-deployment.yaml` — completed
+- [ ] `k8s/09-gateway/api-service.yaml` — completed
 - [ ] `k8s/08-scaling/api-hpa.yaml` — completed
 - [ ] Screenshot: `kubectl get pods` with all pods `Running`
 - [ ] Screenshot: `kubectl get hpa` during the load test showing pods scaling up
@@ -705,4 +814,5 @@ Submit your repository (zip or GitHub link) containing:
 | Both Deployments apply cleanly; liveness and readiness probes defined on api and stats         | 1     |
 | Self-healing — deleted pod is automatically replaced (screenshot)                              | 1     |
 | `api-hpa.yaml` — pods scale up under load (screenshot of `kubectl get hpa`)                   | 1     |
-| **Total**                                                                                      | **/8** |
+| Gateway deployed; api demoted to ClusterIP; rate limiting returns 429 after 100 requests      | 1     |
+| **Total**                                                                                      | **/9** |
