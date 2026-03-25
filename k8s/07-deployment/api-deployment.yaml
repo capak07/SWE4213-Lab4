@@ -19,19 +19,19 @@ kind: Deployment
 metadata:
   name: api
 spec:
-  replicas: ???   # Start with 1. You will scale this in the next step.
+  replicas: 1   # Start with 1. You will scale this in the next step.
   selector:
     matchLabels:
-      app: ???    # Must match the labels on the Pod template below.
+      app: api    # Must match the labels on the Pod template below.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: ???         # Max extra pods allowed during a rolling update (try 1).
-      maxUnavailable: ???   # Max pods that can be unavailable during an update (try 0).
+      maxSurge: 1         # Max extra pods allowed during a rolling update (try 1).
+      maxUnavailable: 0   # Max pods that can be unavailable during an update (try 0).
   template:
     metadata:
       labels:
-        app: ???  # Must match selector.matchLabels above.
+        app: api  # Must match selector.matchLabels above.
     spec:
       containers:
         - name: api
@@ -61,14 +61,14 @@ spec:
                                              # to see which pod handled each request.
           livenessProbe:
             httpGet:
-              path: ???   # Which endpoint tells Kubernetes the pod is alive?
-              port: ???   # Which port?
+              path: /health   # Which endpoint tells Kubernetes the pod is alive?
+              port: 3000   # Which port?
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: ???   # Same endpoint — tells K8s the pod is ready to receive traffic.
-              port: ???
+              path: /health   # Same endpoint — tells K8s the pod is ready to receive traffic.
+              port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:

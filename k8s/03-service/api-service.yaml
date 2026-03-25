@@ -23,8 +23,8 @@ metadata:
   name: api
 spec:
   selector:
-    app: ???        # Must match the label you set on the Pod in Part 2.
+    app: api        # Must match the label you set on the Pod in Part 2.
   type: LoadBalancer
   ports:
     - port: 3000        # Port the Service listens on — this is what you curl.
-      targetPort: ???   # Port on the Pod to forward traffic to.
+      targetPort: 3000   # Port on the Pod to forward traffic to.

@@ -29,5 +29,5 @@ spec:
             - containerPort: 8080
           env:
             - name: API_URL
-              value: "???"   # Internal DNS name for the api Service.
+              value: "http://api:3000"   # Internal DNS name for the api Service.
                              # Format: http://<service-name>:<port>
